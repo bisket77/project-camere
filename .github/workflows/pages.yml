@@ -1,0 +1,44 @@
+# เผยแพร่หน้าเว็บ (โหมดเดโม) ไปที่ GitHub Pages ทุกครั้งที่ push เข้า main
+# ลิงก์เว็บจะขึ้นในหน้า Actions ของ workflow นี้ (กล่อง deploy) และที่ Settings → Pages
+# หมายเหตุ: เป็นเดโมข้อมูลจำลอง เพราะ GitHub Pages รัน Python ไม่ได้ และมองไม่เห็นกล้องใน LAN
+name: Deploy เว็บเดโม
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: สร้างหน้าเว็บเดโม
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: สร้างไฟล์เว็บ
+        run: python tools/build_pages.py _site
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    name: เผยแพร่ไป GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

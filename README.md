@@ -1,6 +1,11 @@
 # project-camere — เว็บดูกล้อง IP แบบเรียลไทม์
 
 ![CI](https://github.com/bisket77/project-camere/actions/workflows/ci.yml/badge.svg)
+![Deploy](https://github.com/bisket77/project-camere/actions/workflows/pages.yml/badge.svg)
+
+**เปิดดูหน้าเว็บ (เดโม):** https://bisket77.github.io/project-camere/
+ข้อมูลและภาพกล้องในเดโมเป็นของจำลอง (GitHub Pages รัน Python ไม่ได้ และมองไม่เห็นกล้องใน LAN)
+ใช้งานจริงให้รัน `python web/app.py` บนเครื่องที่อยู่วงเดียวกับกล้อง
 
 ส่วนหนึ่งของโครงการระบบดูกล้องวงจรปิดและควบคุมโปรเจกเตอร์ (ศูนย์บรรณสารฯ)
 เพิ่มกล้องด้วย IP + username + password แล้วดูภาพสดและสถานะของทุกกล้องได้จากหน้าเว็บเดียว
