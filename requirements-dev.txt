@@ -1,0 +1,4 @@
+# สำหรับนักพัฒนาและ GitHub Actions (ทดสอบ + ตรวจโค้ด)
+-r requirements.txt
+pytest>=8.0
+ruff>=0.6

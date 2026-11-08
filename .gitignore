@@ -1,0 +1,30 @@
+# repo นี้เป็น public → ใช้แบบ "บัญชีขาว": ไม่เอาอะไรขึ้นเลย ยกเว้นที่ระบุด้านล่าง
+# (กันเอกสารลูกค้า ไฟล์เสียงสัมภาษณ์ รูปหน้างาน ใบรับรองกล้อง และไฟล์ .exe หลุดขึ้น GitHub)
+/*
+
+# โค้ดและไฟล์ที่ขึ้น git ได้
+!/.gitignore
+!/README.md
+!/requirements.txt
+!/requirements-dev.txt
+!/pyproject.toml
+!/.github/
+!/web/
+!/tools/
+!/tests/
+
+# ภายในโฟลเดอร์ที่อนุญาต ห้ามขึ้นเด็ดขาด
+web/data/
+*.db
+*.db-wal
+*.db-shm
+secret.key
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.jpg
+*.mp4

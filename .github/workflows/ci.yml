@@ -1,0 +1,59 @@
+# ตรวจโค้ดอัตโนมัติทุกครั้งที่ push หรือเปิด Pull Request
+# 1) กันความลับหลุด  2) ตรวจ syntax/โค้ดผิด (ruff)  3) รันชุดทดสอบ (pytest) บน Linux และ Windows
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets-guard:
+    name: กันไฟล์ลับขึ้น repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ห้ามมีฐานข้อมูล / กุญแจ / .env / ไฟล์เอกสารลูกค้า ใน repo
+        run: |
+          bad=$(git ls-files | grep -Ei '(^|/)(secret\.key|\.env)$|\.db$|\.db-(wal|shm)$|web/data/|\.(docx|m4a|cer|exe)$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::พบไฟล์ที่ไม่ควรอยู่ใน repo:"; echo "$bad"; exit 1
+          fi
+          echo "ไม่พบไฟล์ลับ"
+
+  test:
+    name: ทดสอบ (${{ matrix.os }}, Python ${{ matrix.python }})
+    needs: secrets-guard
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: ติดตั้งไลบรารี
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: ตรวจโค้ดด้วย ruff
+        run: ruff check web tools tests
+
+      - name: คอมไพล์ทุกไฟล์ (หา syntax error)
+        run: python -m compileall -q web tools tests
+
+      - name: รันชุดทดสอบ
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -v

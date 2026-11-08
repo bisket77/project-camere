@@ -1,0 +1,9 @@
+# ไลบรารีสำหรับรันเว็บดูกล้อง (web/app.py)
+flask>=3.0
+opencv-python-headless>=4.10   # ดึงภาพ RTSP (เซิร์ฟเวอร์ไม่ต้องใช้หน้าต่าง GUI)
+numpy>=1.26
+requests>=2.31                 # คุยกับ HTTP API ของกล้อง (Digest auth)
+av>=12.0                       # PyAV: ส่งวิดีโอ H.264 ให้เบราว์เซอร์ตรง ๆ
+cryptography>=42.0             # เข้ารหัสรหัสผ่านกล้องในฐานข้อมูล
+
+# หมายเหตุ: tools/view_camera.py เปิดหน้าต่างแสดงภาพ ต้องใช้ opencv-python (แบบมี GUI) แทน

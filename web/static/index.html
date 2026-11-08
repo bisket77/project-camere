@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera Monitor</title>
+<style>
+  :root {
+    --bg: #0f1724; --panel: #172235; --panel2: #1d2b42; --line: #2a3a55;
+    --text: #e6edf7; --muted: #8fa1bd; --accent: #3b82f6;
+    --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444; --idle: #64748b;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 "Segoe UI", "Noto Sans Thai", Tahoma, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 20px;
+           background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { padding: 3px 10px; border-radius: 999px; background: var(--panel2); color: var(--muted); font-size: 13px; }
+  .chip b { color: var(--text); }
+  .spacer { flex: 1; }
+  button, .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+                 padding: 7px 14px; border-radius: 8px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger:hover { border-color: var(--bad); color: var(--bad); }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  main { padding: 16px 20px; }
+
+  /* ---------- ตาราง ---------- */
+  /* ตารางกว้างพอดีจอเสมอ (ไม่มีแถบเลื่อนซ้าย-ขวา) ข้อความยาวจะตัดเป็น … และดูเต็มได้จาก tooltip */
+  .table-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { padding: 8px 8px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td .sub { display: block; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  col.c-img { width: 104px; } col.c-name { width: 15%; } col.c-st { width: 19%; } col.c-ip { width: 13%; }
+  col.c-dev { width: 20%; } col.c-video { width: 11%; } col.c-up { width: 9%; } col.c-act { width: 222px; }
+  td.act { text-align: right; overflow: visible; text-overflow: clip; } td.act button { padding: 6px 9px; }
+  @media (max-width: 1100px) { col.c-up, td.t-up, th.t-up { display: none; } }
+  @media (max-width: 900px)  { col.c-dev { width: 0; } td.t-dev, th.t-dev { display: none; } }
+  th { background: var(--panel2); color: var(--muted); font-weight: 500; font-size: 13px; position: sticky; top: 0; }
+  tr:hover td { background: #1a2740; }
+  td.mono { font-family: Consolas, monospace; font-size: 13px; }
+  .thumb { width: 88px; height: 50px; border-radius: 4px; background: #000; object-fit: cover; display: block; cursor: pointer; }
+  .thumb.none { display: grid; place-items: center; color: var(--idle); font-size: 11px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--idle); flex: none; }
+  .s-online .dot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  .s-snapshot .dot, .s-mjpeg .dot, .s-connecting .dot { background: var(--warn); }
+  .s-offline .dot, .s-auth_error .dot, .s-stream_error .dot { background: var(--bad); }
+  .err { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .muted { color: var(--muted); }
+  .empty { padding: 48px; text-align: center; color: var(--muted); }
+
+  /* ---------- กริด ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .card .img { aspect-ratio: 16/9; background: #000; position: relative; cursor: pointer; }
+  .card .img img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .card .img .ph { position: absolute; inset: 0; display: grid; place-items: center; color: var(--idle); }
+  .card .meta { padding: 8px 10px; display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+  .badge { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.6); padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+
+  /* ---------- หน้าต่าง ---------- */
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 0; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .dlg-head { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); gap: 10px; }
+  .dlg-head h2 { margin: 0; font-size: 16px; flex: 1; }
+  form.add { padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: min(560px, 92vw); }
+  form.add label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  form.add .full { grid-column: 1 / -1; }
+  input, select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .form-err { color: var(--bad); min-height: 1.2em; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; }
+  #viewer { width: min(1200px, 96vw); }
+  #viewer img, #viewer video { width: 100%; display: block; background: #000; min-height: 200px; max-height: 75vh; object-fit: contain; }
+  .vinfo { display: flex; gap: 16px; flex-wrap: wrap; padding: 10px 16px; font-size: 13px; color: var(--muted); }
+  .vinfo b { color: var(--text); font-weight: 500; }
+  @media (max-width: 600px) { form.add { grid-template-columns: 1fr; } main, header { padding: 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>📹 Camera Monitor</h1>
+  <div class="stats">
+    <span class="chip">ทั้งหมด <b id="c-total">0</b></span>
+    <span class="chip">ออนไลน์ <b id="c-on" style="color:var(--ok)">0</b></span>
+    <span class="chip">มีปัญหา <b id="c-bad" style="color:var(--bad)">0</b></span>
+  </div>
+  <div class="spacer"></div>
+  <div class="seg">
+    <button id="v-table" class="on">ตาราง</button>
+    <button id="v-grid">ภาพรวม</button>
+  </div>
+  <button id="btn-reconnect-all" title="ตัดการเชื่อมต่อแล้วต่อกล้องทุกตัวใหม่ทันที">⟳ เชื่อมต่อใหม่ทั้งหมด</button>
+  <button class="primary" id="btn-add">+ เพิ่มกล้อง</button>
+</header>
+
+<main>
+  <div id="table-view" class="table-wrap">
+    <table>
+      <colgroup><col class="c-img"><col class="c-name"><col class="c-st"><col class="c-ip"><col class="c-dev">
+        <col class="c-video"><col class="c-up"><col class="c-act"></colgroup>
+      <thead><tr>
+        <th>ภาพ</th><th>ชื่อกล้อง</th><th>สถานะ</th><th>IP / Ping</th><th class="t-dev">รุ่น / Serial / Firmware</th>
+        <th>ภาพ / FPS</th><th class="t-up">ออนไลน์มาแล้ว</th><th></th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="empty" class="empty">ยังไม่มีกล้อง กด “+ เพิ่มกล้อง” เพื่อเริ่มต้น</div>
+  </div>
+  <div id="grid-view" class="grid" hidden></div>
+</main>
+
+<!-- เพิ่มกล้อง -->
+<dialog id="dlg-add">
+  <div class="dlg-head"><h2 id="add-title">เพิ่มกล้อง</h2><button type="button" data-close>✕</button></div>
+  <form class="add" id="form-add" autocomplete="off">
+    <label>ชื่อกล้อง<input name="name" placeholder="เช่น ห้อง B1118"></label>
+    <label>ยี่ห้อ
+      <select name="brand">
+        <option value="dahua">Dahua / Imou</option>
+        <option value="hikvision">Hikvision / HiLook</option>
+        <option value="other">อื่น ๆ (ใส่ RTSP URL เอง)</option>
+      </select>
+    </label>
+    <label class="ip-row">IP Address<input name="ip" placeholder="192.168.1.108" value="192.168.1.108"></label>
+    <label>คุณภาพภาพ
+      <select name="quality">
+        <option value="sub" selected>Sub stream (ลื่นสุด แนะนำ)</option>
+        <option value="main">Main stream (ชัดสุด ไฟล์ใหญ่)</option>
+      </select>
+    </label>
+    <label>Username<input name="user" value="admin" autocomplete="off"></label>
+    <label>Password<input name="password" type="password" autocomplete="new-password"></label>
+    <label class="port-row">RTSP Port<input name="rtsp_port" inputmode="numeric" value="554" placeholder="554"></label>
+    <label class="port-row">HTTP Port<input name="http_port" inputmode="numeric" value="80" placeholder="80"></label>
+    <label class="full rtsp-row" hidden>RTSP URL
+      <input name="rtsp_url" placeholder="rtsp://192.168.1.50:554/stream1  (ใช้ Username/Password ด้านบนให้อัตโนมัติ)"></label>
+    <div class="full form-err" id="add-err"></div>
+    <div class="full actions">
+      <button type="button" data-close>ยกเลิก</button>
+      <button class="primary" type="submit" id="add-submit">ตรวจสอบและเพิ่ม</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ดูภาพสด -->
+<dialog id="viewer">
+  <div class="dlg-head"><h2 id="v-title">กล้อง</h2><button type="button" id="v-reconnect">⟳ เชื่อมต่อใหม่</button><button type="button" data-close>✕</button></div>
+  <img id="v-img" alt="">
+  <video id="v-video" muted autoplay playsinline hidden></video>
+  <div class="vinfo" id="v-info"></div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+let cams = [], view = "table", viewingId = null;
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dash = v => (v === null || v === undefined || v === "" ? '<span class="muted">—</span>' : esc(v));
+function uptime(since) {
+  if (!since) return dash();
+  let s = Math.max(0, Math.floor(Date.now() / 1000 - since));
+  const d = Math.floor(s / 86400); s %= 86400;
+  const h = Math.floor(s / 3600); s %= 3600;
+  const m = Math.floor(s / 60); s %= 60;
+  return (d ? d + " วัน " : "") + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+}
+const statusHtml = c => `<span class="status s-${c.status}"><span class="dot"></span>${esc(c.status_text)}</span>`;
+// ภาพย่อในตาราง/การ์ด: ขอแบบย่อจากเซิร์ฟเวอร์ (ตาราง 200px, การ์ด 640px) ไม่โหลดภาพเต็ม 1080p
+const thumbUrl = (c, w = 200) => `/api/cameras/${c.id}/snapshot.jpg?w=${w}&t=${Date.now()}`;
+
+// ---------- โหลดสถานะทุก 2 วินาที ----------
+async function refresh() {
+  try {
+    const r = await fetch("/api/cameras", {cache: "no-store"});
+    cams = await r.json();
+  } catch { return; }
+  $("#c-total").textContent = cams.length;
+  $("#c-on").textContent = cams.filter(c => ["online", "snapshot", "mjpeg"].includes(c.status)).length;
+  $("#c-bad").textContent = cams.filter(c => ["offline", "auth_error", "stream_error"].includes(c.status)).length;
+  view === "table" ? renderTable() : renderGrid();
+  if (viewingId) renderViewerInfo();
+}
+
+function renderTable() {
+  $("#empty").hidden = cams.length > 0;
+  const tb = $("#rows");
+  // ลบแถวของกล้องที่ถูกลบไปแล้ว
+  [...tb.children].forEach(tr => { if (!cams.find(c => c.id === tr.dataset.id)) tr.remove(); });
+  for (const c of cams) {
+    let tr = tb.querySelector(`tr[data-id="${c.id}"]`);
+    if (!tr) {
+      tr = document.createElement("tr");
+      tr.dataset.id = c.id;
+      tr.innerHTML = `<td class="t-img"></td><td class="t-name"></td><td class="t-st"></td><td class="mono t-ip"></td>
+        <td class="t-dev"></td><td class="mono t-video"></td><td class="mono t-up"></td>
+        <td class="act"><button data-view="${c.id}">ดูสด</button> <button data-reconnect="${c.id}" title="เชื่อมต่อใหม่ทันที">⟳</button> <button data-edit="${c.id}">แก้ไข</button> <button class="danger" data-del="${c.id}">ลบ</button></td>`;
+      tb.appendChild(tr);
+    }
+    const q = s => tr.querySelector(s);
+    const name = q(".t-name");
+    name.innerHTML = `<b>${esc(c.name)}</b>` + (c.device_name ? `<span class="sub">${esc(c.device_name)}</span>` : "");
+    name.title = c.name;
+    const isOn = ["online", "snapshot", "mjpeg"].includes(c.status);
+    const lastSeen = !isOn && c.last_online_at
+      ? `<span class="sub">ออนไลน์ล่าสุด ${esc(new Date(c.last_online_at * 1000).toLocaleString("th-TH"))}</span>` : "";
+    q(".t-st").innerHTML = statusHtml(c) + (c.last_error ? `<div class="err" title="${esc(c.last_error)}">${esc(c.last_error)}</div>` : "") + lastSeen;
+    q(".t-ip").innerHTML = esc(c.ip) + `<span class="sub">${c.latency_ms != null ? "ping " + c.latency_ms + " ms" : "ping —"}</span>`;
+    const dev = q(".t-dev");
+    dev.innerHTML = dash(c.model) + `<span class="sub mono">${esc(c.serial || "")}</span><span class="sub mono">${esc(c.firmware || "")}</span>`;
+    dev.title = [c.model, c.serial, c.firmware].filter(Boolean).join(" | ");
+    q(".t-video").innerHTML = dash(c.resolution) + `<span class="sub">${c.fps ? c.fps + " fps" : "— fps"}</span>`;
+    q(".t-up").innerHTML = uptime(c.online_since);
+    const cell = q(".t-img");
+    if (c.has_frame) {
+      let img = cell.querySelector("img");
+      if (!img) { cell.innerHTML = `<img class="thumb" data-view="${c.id}" alt="">`; img = cell.querySelector("img"); }
+      img.src = thumbUrl(c);
+    } else {
+      cell.innerHTML = `<div class="thumb none">ไม่มีภาพ</div>`;
+    }
+  }
+}
+
+function renderGrid() {
+  const g = $("#grid-view");
+  [...g.children].forEach(el => { if (!cams.find(c => c.id === el.dataset.id)) el.remove(); });
+  if (!cams.length) { g.innerHTML = `<div class="empty">ยังไม่มีกล้อง</div>`; return; }
+  g.querySelector(".empty")?.remove();
+  for (const c of cams) {
+    let card = g.querySelector(`.card[data-id="${c.id}"]`);
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "card"; card.dataset.id = c.id;
+      card.innerHTML = `<div class="img" data-view="${c.id}"><img alt=""><div class="ph">ไม่มีภาพ</div><span class="badge"></span></div>
+        <div class="meta"><b class="n"></b><span class="st"></span><span><button data-reconnect="${c.id}" title="เชื่อมต่อใหม่ทันที">⟳</button> <button data-edit="${c.id}">แก้ไข</button></span></div>`;
+      g.appendChild(card);
+    }
+    card.querySelector(".n").textContent = c.name;
+    card.querySelector(".st").innerHTML = statusHtml(c);
+    card.querySelector(".badge").textContent = `${c.ip} · ${c.fps || 0} fps · ${c.latency_ms ?? "-"} ms`;
+    const img = card.querySelector("img"), ph = card.querySelector(".ph");
+    ph.hidden = c.has_frame; img.hidden = !c.has_frame;
+    if (c.has_frame) img.src = thumbUrl(c, 640);
+  }
+}
+
+// ---------- ดูภาพสด ----------
+// วิธีที่ 1 (ลื่นสุด): ถ้ากล้องต่อผ่าน RTSP → รับวิดีโอ H.264 ตรง ๆ แล้วเล่นด้วย MediaSource (25 fps เท่าหน้าเว็บกล้อง)
+// วิธีที่ 2 (สำรอง): MJPEG ผ่าน <img> ใช้ได้ทุกกรณี
+let playMode = "", liveCtl = null;
+
+function stopPlayers() {
+  if (liveCtl) { liveCtl.abort(); liveCtl = null; }
+  const v = $("#v-video");
+  v.pause(); v.removeAttribute("src"); v.load(); v.hidden = true;
+  $("#v-img").src = ""; $("#v-img").hidden = true;
+}
+
+function startMjpeg(id) {
+  stopPlayers();
+  playMode = "MJPEG";
+  const img = $("#v-img");
+  img.hidden = false;
+  img.src = `/api/cameras/${id}/stream.mjpg?t=${Date.now()}`;
+  renderViewerInfo();
+}
+
+async function startH264(id) {
+  stopPlayers();
+  const ctl = new AbortController(); liveCtl = ctl;
+  const res = await fetch(`/api/cameras/${id}/live.mp4`, {signal: ctl.signal, cache: "no-store"});
+  if (!res.ok) throw new Error("live.mp4 " + res.status);
+  const mime = `video/mp4; codecs="${res.headers.get("X-Codec") || "avc1.640029"}"`;
+  if (!MediaSource.isTypeSupported(mime)) throw new Error("ไม่รองรับ " + mime);
+
+  const v = $("#v-video"), ms = new MediaSource();
+  v.src = URL.createObjectURL(ms);
+  await new Promise(r => ms.addEventListener("sourceopen", r, {once: true}));
+  const sb = ms.addSourceBuffer(mime);
+  const queue = [];
+  const pump = () => {
+    if (sb.updating || !queue.length || ms.readyState !== "open") return;
+    const parts = queue.splice(0), total = parts.reduce((n, p) => n + p.length, 0);
+    const buf = new Uint8Array(total); let o = 0;
+    for (const p of parts) { buf.set(p, o); o += p.length; }
+    sb.appendBuffer(buf);
+  };
+  sb.addEventListener("updateend", () => {
+    const b = v.buffered;
+    if (b.length) {
+      const start = b.start(0), end = b.end(b.length - 1);
+      // ตามให้ทันภาพล่าสุดเสมอ (ดีเลย์ต่ำ) ถ้าตามหลังเกิน 0.6 วินาทีให้กระโดดไปท้ายสุด
+      if (v.currentTime < start || end - v.currentTime > 0.6) v.currentTime = Math.max(start, end - 0.1);
+      // ล้างข้อมูลเก่าไม่ให้หน่วยความจำบวม
+      if (end - start > 30 && !sb.updating) { sb.remove(start, end - 10); return; }
+    }
+    pump();
+  });
+  playMode = "H.264 ตรง (ลื่นสุด)";
+  v.hidden = false;
+  renderViewerInfo();
+  v.play().catch(() => {});
+  const reader = res.body.getReader();
+  while (true) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    queue.push(value); pump();
+  }
+  throw new Error("สตรีมจบ");
+}
+
+async function openViewer(id) {
+  const c = cams.find(x => x.id === id); if (!c) return;
+  viewingId = id;
+  $("#v-title").textContent = `${c.name} — ${c.ip}`;
+  if (!$("#viewer").open) $("#viewer").showModal();
+  if (c.mode === "rtsp" && window.MediaSource) {
+    try { await startH264(id); return; }
+    catch (e) { if (e.name === "AbortError" || viewingId !== id) return; console.warn("ใช้ MJPEG แทน:", e.message); }
+  }
+  if (viewingId === id) startMjpeg(id);
+}
+function renderViewerInfo() {
+  const c = cams.find(x => x.id === viewingId); if (!c) return;
+  const item = (k, v) => `<span>${k}: <b>${v}</b></span>`;
+  $("#v-info").innerHTML = [
+    item("สถานะ", statusHtml(c)), item("ความละเอียด", dash(c.resolution)), item("FPS", c.fps || "—"),
+    item("Ping", c.latency_ms != null ? c.latency_ms + " ms" : "—"), item("รุ่น", dash(c.model)),
+    item("Serial", dash(c.serial)), item("ออนไลน์มาแล้ว", uptime(c.online_since)),
+    item("ช่องทางภาพ", esc(playMode || "—")), item("RTSP", esc(c.rtsp)),
+  ].join("");
+}
+$("#viewer").addEventListener("close", () => { viewingId = null; stopPlayers(); playMode = ""; });
+
+// ---------- เพิ่ม / ลบ ----------
+const form = $("#form-add");
+let editingId = null;  // null = เพิ่มกล้องใหม่, มีค่า = กำลังแก้ไขกล้องตัวนั้น
+const submitLabel = () => (editingId ? "ตรวจสอบและบันทึก" : "ตรวจสอบและเพิ่ม");
+function syncBrand() {
+  const other = form.brand.value === "other";
+  form.querySelector(".rtsp-row").hidden = !other;
+  form.querySelector(".ip-row").hidden = other;
+  form.querySelectorAll(".port-row").forEach(el => el.hidden = other);  // แบบ URL เอง พอร์ตอยู่ใน URL แล้ว
+}
+form.brand.addEventListener("change", syncBrand);
+
+function openForm(cam) {
+  editingId = cam ? cam.id : null;
+  form.reset();
+  if (cam) {
+    form.name.value = cam.name; form.brand.value = cam.brand; form.ip.value = cam.ip;
+    form.quality.value = cam.quality; form.user.value = cam.user; form.rtsp_url.value = cam.rtsp_url || "";
+    form.rtsp_port.value = cam.rtsp_port; form.http_port.value = cam.http_port;
+  }
+  form.password.placeholder = cam ? "เว้นว่าง = ใช้รหัสเดิม" : "";
+  $("#add-title").textContent = cam ? `แก้ไขกล้อง: ${cam.name}` : "เพิ่มกล้อง";
+  $("#add-submit").textContent = submitLabel();
+  $("#add-err").textContent = "";
+  syncBrand();
+  $("#dlg-add").showModal();
+  form.name.focus();
+}
+$("#btn-add").onclick = () => openForm(null);
+
+form.addEventListener("submit", async e => {
+  e.preventDefault();
+  const btn = $("#add-submit");
+  btn.disabled = true; btn.textContent = "กำลังตรวจสอบ...";
+  $("#add-err").textContent = "";
+  try {
+    const body = Object.fromEntries(new FormData(form));
+    const url = editingId ? `/api/cameras/${editingId}` : "/api/cameras";
+    const r = await fetch(url, {method: editingId ? "PUT" : "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) { $("#add-err").textContent = d.error || "บันทึกไม่สำเร็จ"; return; }
+    form.reset();
+    $("#dlg-add").close();
+    refresh();
+  } catch (err) {
+    $("#add-err").textContent = "ติดต่อเซิร์ฟเวอร์ไม่ได้";
+  } finally {
+    btn.disabled = false; btn.textContent = submitLabel();
+  }
+});
+
+document.addEventListener("click", async e => {
+  const rc = e.target.closest("[data-reconnect]");
+  if (rc) { e.stopPropagation(); return reconnect(rc.dataset.reconnect, rc); }
+  const ed = e.target.closest("[data-edit]");
+  if (ed) { e.stopPropagation(); return openForm(cams.find(x => x.id === ed.dataset.edit)); }
+  const v = e.target.closest("[data-view]"); if (v) return openViewer(v.dataset.view);
+  const d = e.target.closest("[data-del]");
+  if (d) {
+    const c = cams.find(x => x.id === d.dataset.del);
+    if (c && confirm(`ลบกล้อง “${c.name}” (${c.ip}) ออกจากรายการ?`)) {
+      await fetch(`/api/cameras/${c.id}`, {method: "DELETE"}); refresh();
+    }
+  }
+  const x = e.target.closest("[data-close]"); if (x) x.closest("dialog").close();
+});
+
+// ---------- เชื่อมต่อใหม่ (รีเซ็ต ไม่ต้องรอรอบลองใหม่) ----------
+async function reconnect(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    await fetch(id ? `/api/cameras/${id}/reconnect` : "/api/cameras/reconnect", {method: "POST"});
+    // ถ้ากำลังเปิดดูภาพสดของกล้องนี้อยู่ ให้เปิดสตรีมใหม่ด้วย
+    if (viewingId && (!id || id === viewingId)) {
+      const vid = viewingId;
+      setTimeout(() => { if (viewingId === vid) openViewer(vid); }, 2500);
+    }
+    await refresh();
+  } finally {
+    if (btn) setTimeout(() => (btn.disabled = false), 2000);
+  }
+}
+$("#btn-reconnect-all").onclick = e => reconnect(null, e.currentTarget);
+$("#v-reconnect").onclick = e => reconnect(viewingId, e.currentTarget);
+
+function setView(v) {
+  view = v;
+  $("#v-table").classList.toggle("on", v === "table");
+  $("#v-grid").classList.toggle("on", v === "grid");
+  $("#table-view").hidden = v !== "table";
+  $("#grid-view").hidden = v !== "grid";
+  refresh();
+}
+$("#v-table").onclick = () => setView("table");
+$("#v-grid").onclick = () => setView("grid");
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
