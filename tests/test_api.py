@@ -13,7 +13,7 @@ def _other(port, **kw):
 def test_index_page(client):
     r = client.get("/")
     assert r.status_code == 200
-    assert b"Camera Monitor" in r.data
+    assert b"Classroom Monitor" in r.data
 
 
 def test_add_list_edit_delete(client):
@@ -51,6 +51,19 @@ def test_validation_errors(client):
     assert r.status_code == 400
     r = client.post("/api/cameras", json={"brand": "unknown", "ip": "127.0.0.1"})
     assert r.status_code == 400
+
+
+def test_rtsps_url_accepted(client):
+    """RTSP over TLS (rtsps://) ใส่เองได้ และใส่ username/password ให้อัตโนมัติ แต่ไม่ส่งรหัสกลับมาที่หน้าเว็บ"""
+    port = closed_port()
+    r = client.post("/api/cameras", json={"brand": "other", "user": "admin", "password": "pw-secret-1",
+                                          "rtsp_url": f"RTSPS://127.0.0.1:{port}/cam/realmonitor?channel=1&subtype=0"})
+    assert r.status_code == 201, r.get_json()
+    cam = r.get_json()
+    assert cam["rtsp_url"].startswith("rtsps://127.0.0.1") and "pw-secret-1" not in r.get_data(as_text=True)
+    import app as camapp
+    assert camapp.cameras[cam["id"]].custom_rtsp.startswith("rtsps://admin:pw-secret-1@127.0.0.1")
+    assert camapp.cameras[cam["id"]].rtsp_tls is True
 
 
 def test_unreachable_dahua_rejected(client):

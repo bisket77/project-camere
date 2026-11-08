@@ -23,7 +23,7 @@ def build(out_dir: pathlib.Path) -> pathlib.Path:
     html = html.replace("<body>", "<body>\n" + BANNER, 1)
     # demo.js ต้องโหลดก่อนสคริปต์หลัก เพื่อดัก fetch / รูปภาพได้ทัน
     html = html.replace("<script>", '<script src="demo.js"></script>\n<script>', 1)
-    html = html.replace("<title>Camera Monitor</title>", "<title>Camera Monitor (Demo)</title>", 1)
+    html = html.replace("</title>", " (Demo)</title>", 1)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "index.html").write_text(html, encoding="utf-8")

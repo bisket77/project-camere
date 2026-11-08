@@ -54,5 +54,26 @@ def test_update_runtime_and_keep_device_info():
         db.delete_camera("dbtest03")
 
 
+def test_old_database_gets_room_column(tmp_path, monkeypatch):
+    """ฐานข้อมูลรุ่นก่อนมีห้อง: เปิดแล้วต้องเพิ่มคอลัมน์ room_id ให้ และกล้องเดิมยังอยู่"""
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.executescript(db.SCHEMA.split("CREATE TABLE IF NOT EXISTS rooms")[0])
+    old.execute("INSERT INTO cameras (id, name, brand, ip, created_at, updated_at) "
+                "VALUES ('old1', 'กล้องเก่า', 'dahua', '192.0.2.50', 0, 0)")
+    old.commit()
+    old.close()
+    saved = db._conn
+    monkeypatch.setattr(db, "DB_PATH", path)
+    try:
+        db.init()
+        rows = db.load_all()
+        assert rows[0]["id"] == "old1" and rows[0]["room_id"] is None
+        assert db.list_rooms() == [] and db.load_projectors() == []
+    finally:
+        db._conn.close()
+        db._conn = saved
+
+
 def test_wrong_key_gives_empty_password():
     assert db.decrypt("not-a-valid-token") == ""

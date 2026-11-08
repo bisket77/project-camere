@@ -30,6 +30,14 @@ def client():
     for c in cams:
         c.stop()
         db.delete_camera(c.id)
+    with camapp.projectors_lock:
+        ps = list(camapp.projectors.values())
+        camapp.projectors.clear()
+    for p in ps:
+        p.stop()
+        db.delete_projector(p.id)
+    for r in db.list_rooms():
+        db.delete_room(r["id"])
 
 
 def closed_port():

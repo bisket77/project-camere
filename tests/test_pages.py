@@ -10,4 +10,4 @@ def test_build_pages_inserts_demo_before_main_script(tmp_path):
     html = (out / "index.html").read_text(encoding="utf-8")
     assert (out / "demo.js").exists()
     assert html.index('<script src="demo.js"></script>') < html.index("<script>")
-    assert "โหมดเดโม" in html
+    assert "โหมดเดโม" in html and "(Demo)</title>" in html

@@ -32,6 +32,7 @@ except ImportError:  # ยังไม่ได้ pip install av → ใช้ 
 from requests.auth import HTTPDigestAuth, HTTPBasicAuth  # noqa: E402
 from flask import Flask, Response, jsonify, request, send_from_directory, abort  # noqa: E402
 import db  # noqa: E402  ฐานข้อมูลกล้อง (SQLite + เข้ารหัสรหัสผ่าน)
+import projector as pj  # noqa: E402  ควบคุมโปรเจกเตอร์ (PJLink / Panasonic)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OPEN_TIMEOUT_MS = 6000
@@ -316,6 +317,7 @@ class Camera:
     def __init__(self, name, ip, user, password, brand="dahua", quality="sub",
                  rtsp_url="", http_port=80, rtsp_port=554, cam_id=None):
         self.id = cam_id or uuid.uuid4().hex[:8]
+        self.room_id = None  # ห้องที่กล้องตัวนี้อยู่ (rooms.id)
         self.rtsp_input = rtsp_url
         self.name = name or ip
         self.ip = ip
@@ -681,7 +683,8 @@ class Camera:
 
     def to_dict(self):
         return {
-            "id": self.id, "name": self.name, "ip": self.ip, "brand": self.brand,
+            "id": self.id, "name": self.name, "ip": self.ip, "brand": self.brand, "room_id": self.room_id,
+            "sort_order": getattr(self, "sort_order", 0),
             "quality": self.quality, "user": self.user,
             "status": self.status, "status_text": STATUS_TEXT.get(self.status, self.status),
             "last_error": self.last_error, "mode": self.mode,
@@ -713,7 +716,10 @@ def get_cam(cam_id):
 
 @app.get("/")
 def index():
-    return send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
+    resp = send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
+    # ไม่ให้เบราว์เซอร์จำหน้าเก่า (แก้หน้าเว็บแล้วรีเฟรชธรรมดาก็เห็นทันที)
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.get("/favicon.ico")
@@ -732,6 +738,15 @@ class FormError(Exception):
     pass
 
 
+def clean_room_id(room_id):
+    """room_id จากฟอร์ม → ต้องเป็นห้องที่มีอยู่จริง (ว่าง = ยังไม่ระบุห้อง)"""
+    if not room_id:
+        return None
+    if not any(r["id"] == room_id for r in db.list_rooms()):
+        raise FormError("ไม่พบห้องที่เลือก")
+    return room_id
+
+
 def build_camera(d, old=None):
     """ตรวจข้อมูลจากฟอร์มแล้วสร้างกล้องใหม่ (old = กล้องเดิมตอนแก้ไข)"""
     ip = (d.get("ip") or "").strip()
@@ -744,8 +759,10 @@ def build_camera(d, old=None):
     rtsp_url = ""
 
     if brand == "other":
-        if not rtsp_input.lower().startswith("rtsp://"):
-            raise FormError("กล้องยี่ห้ออื่นต้องใส่ RTSP URL (ขึ้นต้นด้วย rtsp://)")
+        scheme = rtsp_input.split("://", 1)[0].lower() if "://" in rtsp_input else ""
+        if scheme not in ("rtsp", "rtsps"):
+            raise FormError("กล้องยี่ห้ออื่นต้องใส่ RTSP URL (ขึ้นต้นด้วย rtsp:// หรือ rtsps://)")
+        rtsp_input = scheme + rtsp_input[len(scheme):]  # ตัวพิมพ์เล็กเสมอ (RTSPS:// → rtsps://)
         parsed = urlparse(rtsp_input)
         ip = parsed.hostname or ip
         rtsp_url = rtsp_input
@@ -755,7 +772,7 @@ def build_camera(d, old=None):
             rtsp_url = old.custom_rtsp  # URL เดิมไม่ได้แก้ → ใช้ตัวเดิมที่มีรหัสผ่านอยู่แล้ว
         elif user and "@" not in parsed.netloc:
             rtsp_url = rtsp_input.replace(
-                "rtsp://", f"rtsp://{quote(user, safe='')}:{quote(password, safe='')}@", 1)
+                f"{scheme}://", f"{scheme}://{quote(user, safe='')}:{quote(password, safe='')}@", 1)
     elif brand not in BRANDS:
         raise FormError("ไม่รู้จักยี่ห้อกล้องนี้")
     if not re.fullmatch(r"[A-Za-z0-9.\-]+", ip or ""):
@@ -792,6 +809,7 @@ def build_camera(d, old=None):
                  cam_id=old.id if old else None)
     cam.rtsp_input = rtsp_input
     cam.info = info
+    cam.room_id = clean_room_id(d.get("room_id"))
     return cam
 
 
@@ -961,6 +979,263 @@ def stream(cam_id):
                     headers={"Cache-Control": "no-store"})
 
 
+# ====================== ห้อง / อาคาร ======================
+@app.get("/api/rooms")
+def list_rooms():
+    return jsonify(db.list_rooms())
+
+
+def _room_from_form(d, room_id=None):
+    name = (d.get("name") or "").strip()
+    if not name:
+        raise FormError("กรุณาใส่ชื่อห้อง เช่น B1121")
+    return {"id": room_id or uuid.uuid4().hex[:8], "name": name[:60],
+            "building": (d.get("building") or "").strip()[:80], "floor": (d.get("floor") or "").strip()[:20],
+            "note": (d.get("note") or "").strip()[:200]}
+
+
+@app.post("/api/rooms")
+def add_room():
+    try:
+        room = _room_from_form(request.get_json(force=True) or {})
+    except FormError as e:
+        return jsonify(error=str(e)), 400
+    db.save_room(room)
+    db.save_room_building(room)
+    return jsonify(room), 201
+
+
+@app.put("/api/rooms/<room_id>")
+def edit_room(room_id):
+    if not any(r["id"] == room_id for r in db.list_rooms()):
+        abort(404)
+    try:
+        room = _room_from_form(request.get_json(force=True) or {}, room_id)
+    except FormError as e:
+        return jsonify(error=str(e)), 400
+    db.save_room(room)
+    db.save_room_building(room)
+    return jsonify(room)
+
+
+@app.post("/api/<kind>/<dev_id>/room")
+def move_device(kind, dev_id):
+    """ย้ายอุปกรณ์เข้าห้องอย่างเดียว {"room_id": "..."} (ไม่ต้องกรอกรหัสผ่าน/ตรวจการเชื่อมต่อใหม่)"""
+    if kind not in ("cameras", "projectors"):
+        abort(404)
+    devs, lock = (cameras, cameras_lock) if kind == "cameras" else (projectors, projectors_lock)
+    with lock:
+        dev = devs.get(dev_id)
+    if not dev:
+        abort(404)
+    try:
+        room_id = clean_room_id((request.get_json(force=True) or {}).get("room_id"))
+    except FormError as e:
+        return jsonify(error=str(e)), 400
+    dev.room_id = room_id
+    db.set_device_room(kind, dev_id, room_id)
+    return jsonify(dev.to_dict())
+
+
+@app.get("/api/buildings")
+def list_buildings():
+    return jsonify(db.list_buildings())
+
+
+@app.post("/api/buildings")
+def add_building():
+    name = ((request.get_json(force=True) or {}).get("name") or "").strip()[:80]
+    if not name:
+        return jsonify(error="กรุณาใส่ชื่ออาคาร"), 400
+    if not db.add_building(name):
+        return jsonify(error=f"มีอาคาร {name} อยู่แล้ว"), 400
+    return jsonify(name=name), 201
+
+
+@app.post("/api/buildings/delete")
+def delete_building():
+    name = ((request.get_json(force=True) or {}).get("name") or "").strip()
+    if not db.delete_building(name):
+        return jsonify(error="ยังมีห้องอยู่ในอาคารนี้ ย้ายหรือลบห้องก่อน"), 400
+    return jsonify(ok=True)
+
+
+@app.post("/api/order")
+def set_order():
+    """จัดลำดับในโหมดแก้ไข {"kind": "buildings|rooms|cameras|projectors", "ids": [...]}"""
+    d = request.get_json(force=True) or {}
+    kind, ids = d.get("kind"), d.get("ids")
+    if kind not in ("buildings", "rooms", "cameras", "projectors", "devices") or not isinstance(ids, list):
+        return jsonify(error="ข้อมูลไม่ถูกต้อง"), 400
+    ids = [str(i) for i in ids][:1000]
+    if kind == "devices":
+        # ลำดับรวมในห้อง (กล้องกับโปรเจกเตอร์สลับกันได้อิสระ) ids = ["projector:abc", "camera:def", ...]
+        for i, ref in enumerate(ids, 1):
+            k, _, dev_id = ref.partition(":")
+            if k not in ("camera", "projector"):
+                return jsonify(error="ข้อมูลไม่ถูกต้อง"), 400
+            table, devs, lock = (("cameras", cameras, cameras_lock) if k == "camera"
+                                 else ("projectors", projectors, projectors_lock))
+            db.set_order_one(table, dev_id, i)
+            with lock:
+                if dev_id in devs:
+                    devs[dev_id].sort_order = i
+        return jsonify(ok=True)
+    db.set_order(kind, ids)
+    devs = {"cameras": (cameras, cameras_lock), "projectors": (projectors, projectors_lock)}.get(kind)
+    if devs:
+        with devs[1]:
+            for i, k in enumerate(ids, 1):
+                if k in devs[0]:
+                    devs[0][k].sort_order = i
+    return jsonify(ok=True)
+
+
+@app.post("/api/buildings/rename")
+def rename_building():
+    """{"old": "B1", "new": "B1 อาคารเรียนรวม 1"} เปลี่ยนชื่ออาคารของทุกห้องในอาคารนั้นทีเดียว"""
+    d = request.get_json(force=True) or {}
+    old, new = (d.get("old") or "").strip(), (d.get("new") or "").strip()[:80]
+    if not new:
+        return jsonify(error="กรุณาใส่ชื่ออาคาร"), 400
+    n = db.rename_building(old, new)
+    if not n:
+        return jsonify(error="ไม่พบอาคารนี้"), 404
+    return jsonify(ok=True, rooms=n)
+
+
+@app.delete("/api/rooms/<room_id>")
+def delete_room(room_id):
+    """ลบห้อง: กล้อง/โปรเจกเตอร์ในห้องไม่ถูกลบ แค่ย้ายไปอยู่ "ยังไม่ระบุห้อง\""""
+    db.delete_room(room_id)
+    with cameras_lock:
+        for c in cameras.values():
+            if c.room_id == room_id:
+                c.room_id = None
+    with projectors_lock:
+        for p in projectors.values():
+            if p.room_id == room_id:
+                p.room_id = None
+    return jsonify(ok=True)
+
+
+# ====================== โปรเจกเตอร์ ======================
+projectors = {}
+projectors_lock = threading.Lock()
+
+
+def save_projector_status(p):
+    db.update_projector_runtime(p.id, last_status=p.status, last_error=p.last_error, lamp_hours=p.lamp_hours,
+                                last_online_at=p.last_online_at, **{k: v for k, v in p.info.items() if v})
+
+
+def get_projector(proj_id):
+    p = projectors.get(proj_id)
+    if not p:
+        abort(404)
+    return p
+
+
+def build_projector(d, old=None):
+    ip = (d.get("ip") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9.\-]+", ip):
+        raise FormError("IP ไม่ถูกต้อง")
+    user = (d.get("user") or "").strip()
+    password = d.get("password") or ""
+    if old and not password:
+        password = old.password  # เว้นว่าง = ใช้รหัสเดิม
+    try:
+        pjlink_port = int(d.get("pjlink_port") or 4352)
+        control_port = int(d.get("control_port") or 1024)
+    except ValueError:
+        raise FormError("พอร์ตต้องเป็นตัวเลข")
+    room_id = clean_room_id(d.get("room_id"))
+    with projectors_lock:
+        if any(p.ip == ip and p is not old for p in projectors.values()):
+            raise FormError(f"มีโปรเจกเตอร์ {ip} อยู่ในรายการแล้ว")
+    has_pj, has_nt = pj.tcp_open(ip, pjlink_port), pj.tcp_open(ip, control_port)
+    if not has_pj and not has_nt:
+        raise FormError(f"ติดต่อ {ip} ไม่ได้ (พอร์ต PJLink {pjlink_port} / ควบคุม {control_port}) "
+                        "ตรวจ IP, สายแลน และเปิด Network control ที่ตัวเครื่อง")
+    # ตรวจรหัสผ่านก่อนบันทึก
+    try:
+        if has_pj:
+            pj.pjlink_query(ip, pjlink_port, password, ["%1POWR ?"])
+        else:
+            pj.ntcontrol(ip, control_port, user, password, "QPW")
+    except pj.ProjectorAuthError:
+        raise FormError("username หรือ password ไม่ถูกต้อง")
+    except (OSError, pj.ProjectorError):
+        pass  # ตอบช้า/คำสั่งไม่รองรับ ไม่เป็นไร ให้ตัวโปรแกรมลองถามสถานะต่อเอง
+    p = pj.Projector((d.get("name") or "").strip(), ip, user, password, pjlink_port, control_port, room_id,
+                     proj_id=old.id if old else None, on_change=save_projector_status)
+    if old and old.ip == ip:
+        p.info = dict(old.info)
+    return p
+
+
+@app.get("/api/projectors")
+def list_projectors():
+    with projectors_lock:
+        ps = list(projectors.values())
+    return jsonify([p.to_dict() for p in ps])
+
+
+@app.post("/api/projectors")
+def add_projector():
+    try:
+        p = build_projector(request.get_json(force=True) or {})
+    except FormError as e:
+        return jsonify(error=str(e)), 400
+    with projectors_lock:
+        projectors[p.id] = p
+    db.save_projector(p)
+    return jsonify(p.to_dict()), 201
+
+
+@app.put("/api/projectors/<proj_id>")
+def edit_projector(proj_id):
+    old = get_projector(proj_id)
+    try:
+        p = build_projector(request.get_json(force=True) or {}, old=old)
+    except FormError as e:
+        return jsonify(error=str(e)), 400
+    old.stop()
+    with projectors_lock:
+        projectors[p.id] = p
+    db.save_projector(p)
+    return jsonify(p.to_dict())
+
+
+@app.delete("/api/projectors/<proj_id>")
+def delete_projector(proj_id):
+    with projectors_lock:
+        p = projectors.pop(proj_id, None)
+    if not p:
+        abort(404)
+    p.stop()
+    db.delete_projector(proj_id)
+    return jsonify(ok=True)
+
+
+@app.post("/api/projectors/<proj_id>/control")
+def control_projector(proj_id):
+    """{"action": "power", "value": "on"} ดู action ทั้งหมดใน projector.Projector.control"""
+    p = get_projector(proj_id)
+    d = request.get_json(force=True) or {}
+    try:
+        p.control(d.get("action"), d.get("value"))
+    except pj.ProjectorError as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(p.to_dict())
+
+
+@app.post("/api/projectors/<proj_id>/refresh")
+def refresh_projector(proj_id):
+    get_projector(proj_id).refresh()
+    return jsonify(ok=True)
+
+
 def load_saved_cameras():
     """โหลดกล้องที่บันทึกไว้ในฐานข้อมูล แล้วเริ่มเชื่อมต่อทุกตัว (ไม่ต้องเพิ่มใหม่หลังรีสตาร์ท)"""
     db.init()
@@ -970,9 +1245,19 @@ def load_saved_cameras():
         cam.rtsp_input = row["rtsp_url"]
         cam.info = {k: row[k] for k in ("model", "serial", "firmware", "device_name") if row[k]}
         cam.last_online_at = row["last_online_at"]
+        cam.room_id = row.get("room_id")
+        cam.sort_order = row.get("sort_order") or 0
         with cameras_lock:
             cameras[cam.id] = cam
-    print(f"โหลดกล้องจากฐานข้อมูล {len(cameras)} ตัว ({db.DB_PATH})")
+    for row in db.load_projectors():
+        p = pj.Projector(row["name"], row["ip"], row["username"], row["password"], row["pjlink_port"],
+                         row["control_port"], row["room_id"], proj_id=row["id"], on_change=save_projector_status)
+        p.info = {k: row[k] for k in ("model", "serial", "projector_name") if row[k]}
+        p.last_online_at = row["last_online_at"]
+        p.sort_order = row.get("sort_order") or 0
+        with projectors_lock:
+            projectors[p.id] = p
+    print(f"โหลดจากฐานข้อมูล: กล้อง {len(cameras)} ตัว, โปรเจกเตอร์ {len(projectors)} เครื่อง ({db.DB_PATH})")
 
 
 if __name__ == "__main__":
