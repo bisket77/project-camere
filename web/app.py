@@ -261,10 +261,20 @@ class TlsProxy:
     def _handle(self, client):
         try:
             remote = _insecure_tls().wrap_socket(socket.create_connection((self.host, self.port), timeout=6))
-            remote.settimeout(None)
+            # อ่านแบบไม่รอ: TLS 1.3 ส่งข้อมูล session มาหลังจับมือ ทำให้ select บอกว่า "อ่านได้"
+            # ทั้งที่ยังไม่มีข้อมูลจริง ถ้า recv แบบรอจะค้าง (รอคำตอบที่ยังไม่ได้ส่งคำขอไป)
+            remote.setblocking(False)
         except OSError:
             client.close()
             return
+
+        def send_tls(data):
+            view = memoryview(data)
+            while view:
+                try:
+                    view = view[remote.send(view):]
+                except (ssl.SSLWantWriteError, ssl.SSLWantReadError):
+                    select.select([remote], [remote], [], 1.0)
 
         # ส่งต่อข้อมูลสองทางด้วย thread เดียว (select)
         # ห้ามใช้ socket TLS ตัวเดียวอ่าน+เขียนพร้อมกันจากสอง thread: OpenSSL ไม่รองรับ บน Windows ค้างได้
@@ -275,16 +285,16 @@ class TlsProxy:
                 if remote in readable:
                     try:
                         data = remote.recv(65536)
-                    except ssl.SSLWantReadError:
-                        continue
-                    if not data:
-                        break
-                    client.sendall(data)
+                        if not data:
+                            break
+                        client.sendall(data)
+                    except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                        pass  # ยังไม่มีข้อมูลวิดีโอ/คำตอบจริง รอบถัดไปค่อยอ่าน
                 if client in readable:
                     data = client.recv(65536)
                     if not data:
                         break
-                    remote.sendall(data)
+                    send_tls(data)
         except OSError:
             pass
         finally:
