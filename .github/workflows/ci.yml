@@ -15,7 +15,7 @@ jobs:
     name: กันไฟล์ลับขึ้น repo
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: ห้ามมีฐานข้อมูล / กุญแจ / .env / ไฟล์เอกสารลูกค้า ใน repo
         run: |
           bad=$(git ls-files | grep -Ei '(^|/)(secret\.key|\.env)$|\.db$|\.db-(wal|shm)$|web/data/|\.(docx|m4a|cer|exe)$' || true)
@@ -34,9 +34,9 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.12"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
           cache: pip

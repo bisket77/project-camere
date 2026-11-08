@@ -14,6 +14,7 @@ import argparse
 import os
 import re
 import socket
+import select
 import ssl
 import threading
 import time
@@ -265,24 +266,33 @@ class TlsProxy:
             client.close()
             return
 
-        def pipe(src, dst):
-            try:
-                while True:
-                    data = src.recv(65536)
+        # ส่งต่อข้อมูลสองทางด้วย thread เดียว (select)
+        # ห้ามใช้ socket TLS ตัวเดียวอ่าน+เขียนพร้อมกันจากสอง thread: OpenSSL ไม่รองรับ บน Windows ค้างได้
+        try:
+            while not self.closed:
+                # remote.pending() = ข้อมูล TLS ที่ถอดรหัสแล้วค้างในบัฟเฟอร์ (select มองไม่เห็น)
+                readable = [remote] if remote.pending() else select.select([client, remote], [], [], 1.0)[0]
+                if remote in readable:
+                    try:
+                        data = remote.recv(65536)
+                    except ssl.SSLWantReadError:
+                        continue
                     if not data:
                         break
-                    dst.sendall(data)
-            except OSError:
-                pass
-            finally:
-                for x in (src, dst):
-                    try:
-                        x.close()
-                    except OSError:
-                        pass
-
-        threading.Thread(target=pipe, args=(client, remote), daemon=True).start()
-        pipe(remote, client)
+                    client.sendall(data)
+                if client in readable:
+                    data = client.recv(65536)
+                    if not data:
+                        break
+                    remote.sendall(data)
+        except OSError:
+            pass
+        finally:
+            for x in (client, remote):
+                try:
+                    x.close()
+                except OSError:
+                    pass
 
     def close(self):
         self.closed = True
