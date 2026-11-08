@@ -54,6 +54,18 @@ jobs:
         run: python -m compileall -q web tools tests
 
       - name: รันชุดทดสอบ
+        shell: bash
         env:
           PYTHONIOENCODING: utf-8
-        run: python -m pytest -v
+        run: |
+          set -o pipefail
+          python -m pytest -v 2>&1 | tee pytest.log
+
+      - name: สรุปเทสต์ที่ไม่ผ่าน (แสดงในหน้า Summary)
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "^(FAILED|ERROR) |^E  " pytest.log | head -n 10 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          { echo '### เทสต์ที่ไม่ผ่าน'; echo '```'; grep -E "^(FAILED|ERROR) |^E  |Error" pytest.log | head -n 60; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
