@@ -1,0 +1,101 @@
+==============================================================
+ คำสั่งรันเว็บ Classroom Monitor แบบ Manual (NUC-02 / วง B)
+ เปิด Terminal: Ctrl+Alt+T   วางคำสั่ง: Ctrl+Shift+V
+==============================================================
+
+ปกติไม่ต้องทำอะไร: เปิดเครื่อง -> เว็บรันเอง (service classroom-web)
+เปิดเว็บ:  http://172.28.107.192   หรือ   http://cctv.sut
+
+
+--------------------------------------------------------------
+ 1) สั่งเว็บ (ใช้บ่อย)
+--------------------------------------------------------------
+เปิด / เปิดใหม่
+    sudo systemctl restart classroom-web
+
+ปิด
+    sudo systemctl stop classroom-web
+
+ดูสถานะ (ต้องเป็น active (running) สีเขียว)
+    systemctl status classroom-web --no-pager
+
+ดู log สด (Ctrl+C ออก เว็บไม่ดับ)
+    journalctl -u classroom-web -f
+
+ดูเฉพาะการดึงข้อมูลจาก Google Sheet
+    journalctl -u classroom-web -f | grep sheet
+
+ดึงจาก Google Sheet ทันที (Manual Sync) — ดับเบิลคลิกไอคอน "Sync Sheet" บน Desktop หรือ
+    bash ~/Desktop/project-camere/tools/nuc/sync_sheet.sh
+    (ไม่ต้องรีสตาร์ตเว็บ, ดึงทั้งชีตใหม่, ลองเครื่องที่รหัสผิดใหม่ด้วย)
+
+
+--------------------------------------------------------------
+ 2) รันเองในหน้าต่าง Terminal (ตอนทดสอบ / หา error)
+--------------------------------------------------------------
+ขั้น 1: หยุด service ก่อน (กันพอร์ต 5000 ชนกัน)
+    sudo systemctl stop classroom-web
+
+ขั้น 2: รันเอง (ปิดหน้าต่างนี้ = เว็บดับ)
+    cd ~/Desktop/project-camere && set -a && . web/.env && set +a && .venv/bin/python web/app.py --host 0.0.0.0 --port 5000
+
+ขั้น 3: เสร็จแล้ว Ctrl+C แล้วให้กลับไปรันอัตโนมัติ
+    sudo systemctl start classroom-web
+
+
+--------------------------------------------------------------
+ 3) เปิด/ปิด การรันเองตอนบูต
+--------------------------------------------------------------
+ไม่ให้รันเองตอนเปิดเครื่อง
+    sudo systemctl disable --now classroom-web
+
+ให้รันเองตอนเปิดเครื่อง (ค่าปกติ)
+    sudo systemctl enable --now classroom-web
+
+เช็กว่าทุกตัวเปิดเองตอนบูต (ต้อง enabled ทุกบรรทัด)
+    systemctl is-enabled classroom-web nginx dnsmasq zerotier-one ssh x11vnc
+
+
+--------------------------------------------------------------
+ 4) แก้ค่า Google Sheet / DB
+--------------------------------------------------------------
+แก้ไฟล์ค่า (SHEET_URL, SHEET_TOKEN, CAMERA_DB_PATH)
+    nano ~/Desktop/project-camere/web/.env
+    บันทึก: Ctrl+O, Enter   ออก: Ctrl+X   แล้วสั่ง: sudo systemctl restart classroom-web
+
+ไฟล์ DB ของเครื่องนี้
+    ~/Desktop/project-camere/web/data/DB_NUG02.db
+DB สำรอง (ทุกครั้งที่ deploy)
+    ~/db-backup/
+
+
+--------------------------------------------------------------
+ 5) เช็กเมื่อเข้าเว็บไม่ได้
+--------------------------------------------------------------
+เว็บตอบไหม (ต้องได้ 200)
+    curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5000
+
+พอร์ตเปิดไหม (ต้องเห็น :5000 และ :80)
+    sudo ss -tlnp | grep -E ':5000|:80 '
+
+error ล่าสุด
+    journalctl -u classroom-web -n 30 --no-pager
+
+ZeroTier ได้ IP ไหม (ต้อง OK และมี 172.28.x.x)
+    sudo zerotier-cli listnetworks
+
+nginx (ขึ้น 502 = nginx ปกติ แต่เว็บ 5000 ไม่รัน)
+    sudo systemctl status nginx --no-pager
+
+
+--------------------------------------------------------------
+ 6) ปิดเครื่อง / รีบูต
+--------------------------------------------------------------
+    sudo reboot
+    sudo poweroff
+
+--------------------------------------------------------------
+ อัปเดตโค้ดจาก PC (รันใน cmd บน PC ที่โฟลเดอร์โปรเจกต์)
+    powershell -ExecutionPolicy Bypass -File tools\deploy_b.ps1
+    powershell -ExecutionPolicy Bypass -File tools\deploy_b.ps1 -WithDb   (ส่ง DB_NUG02 ด้วย)
+==============================================================

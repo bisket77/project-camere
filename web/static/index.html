@@ -278,6 +278,16 @@
   input, select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; }
   input:focus, select:focus { outline: none; border-color: var(--accent); }
   .form-err { color: var(--bad); min-height: 1.2em; }
+  .sheet-box { border: 1px dashed var(--line); background: var(--panel2); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+  .sheet-box .sb-head { display: flex; align-items: baseline; gap: 8px; color: var(--muted); margin-bottom: 4px; flex-wrap: wrap; }
+  .sheet-box .sb-head b { color: var(--text); font-weight: 600; white-space: nowrap; }
+  .sheet-box .sb-head span { font-size: 12px; }
+  .sheet-box .sb-grid { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; align-items: center; }
+  .sheet-box .sb-grid span:nth-child(odd) { color: var(--muted); }
+  .sheet-box code { font-family: Consolas, monospace; overflow-wrap: anywhere; }
+  .sheet-box .sb-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .sheet-box .sb-actions button { padding: 3px 10px; font-size: 12px; }
+  .sheet-box .diff { color: var(--warn, #c77700); }
   .actions { display: flex; justify-content: flex-end; gap: 8px; }
   #viewer { width: min(1200px, 96vw); }
   #viewer img, #viewer video { width: 100%; display: block; background: #000; min-height: 200px; max-height: 75vh; object-fit: contain; }
@@ -489,6 +499,7 @@
     <label class="port-row">HTTP Port<input name="http_port" inputmode="numeric" value="80" placeholder="80"></label>
     <label class="full rtsp-row" hidden>RTSP URL
       <input name="rtsp_url" placeholder="rtsp://… หรือ rtsps://… (ใช้ Username/Password ด้านบนให้อัตโนมัติ)"></label>
+    <div class="full sheet-box" id="cam-sheet" hidden></div>
     <div class="full form-err" id="add-err"></div>
     <div class="full actions">
       <button type="button" data-close>ยกเลิก</button>
@@ -510,6 +521,7 @@
     <label>Control Port (Panasonic)<input name="control_port" inputmode="numeric" value="1024"></label>
     <div class="full hint">ใช้ username / password เดียวกับที่เข้าหน้าเว็บ Projector Control Window
       — ที่ตัวเครื่องต้องเปิด <b>Network control</b> และ <b>PJLink</b> (เมนู Network)</div>
+    <div class="full sheet-box" id="proj-sheet" hidden></div>
     <div class="full form-err" id="pf-err"></div>
     <div class="full actions">
       <button type="button" data-close>ยกเลิก</button>
@@ -1377,8 +1389,51 @@ function openForm(cam, roomId = "") {
   $("#add-submit").textContent = submitLabel();
   $("#add-err").textContent = "";
   syncBrand();
+  showSheetValues("#cam-sheet", "cameras", cam, form);
   $("#dlg-add").showModal();
   form.name.focus();
+}
+
+// ---------- ค่าใน Google Sheet (แสดงเทียบในหน้าแก้ไข — แก้จริงในเว็บ ไม่เขียนกลับชีต) ----------
+async function showSheetValues(boxSel, kind, dev, frm) {
+  const box = $(boxSel);
+  box.hidden = true; box.innerHTML = "";
+  const req = box.dataset.req = String((+box.dataset.req || 0) + 1);  // เปิดเครื่องอื่นระหว่างรอ -> ทิ้งผลเก่า
+  if (!dev) return;
+  let r;
+  try { r = await api(`/api/${kind}/${dev.id}/sheet`); } catch { return; }
+  if (box.dataset.req !== req || !r.enabled || !r.row) return;
+  const s = r.row, pw = s.password || "";
+  const dot = "•".repeat(Math.min(Math.max(pw.length, 4), 12));
+  const userDiff = (s.user || "") !== (dev.user || "");
+  const rows = [
+    ["รุ่น (Type)", esc(s.model || "-")],
+    ["IP", `<code>${esc(s.ip)}</code>`],
+    ["Username", `<code>${esc(s.user || "-")}</code>${userDiff ? ' <span class="diff">≠ ในเว็บ: ' + esc(dev.user || "(ว่าง)") + "</span>" : ""}`],
+    ["Password", pw ? `<code class="sb-pw">${dot}</code>` : "-"],
+    ["พอร์ต", esc(kind === "projectors" ? `PJLink ${s.pjlink_port || "-"} / Control ${s.control_port || "-"}` : (s.port || "-"))],
+    ["ห้อง", esc([s.building, s.room, s.floor && "ชั้น " + s.floor].filter(Boolean).join(" · ") || "-")],
+  ];
+  if (s.rtsp) rows.push(["RTSP URL", `<code>${esc(s.rtsp)}</code>`]);
+  box.innerHTML = `<div class="sb-head"><b>ค่าใน Google Sheet</b>
+      <span>(ไว้ดูเทียบ — ถ้าจะเปลี่ยน ให้แก้ในช่องด้านบนแล้วกดบันทึก ระบบไม่แก้ชีต)</span></div>
+    <div class="sb-grid">${rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("")}</div>
+    <div class="sb-actions">
+      ${pw ? '<button type="button" class="sb-show">แสดงรหัส</button>' : ""}
+      <button type="button" class="sb-use">ใช้ Username / Password จากชีต</button>
+    </div>`;
+  const pwEl = box.querySelector(".sb-pw"), showBtn = box.querySelector(".sb-show");
+  if (showBtn) showBtn.onclick = () => {
+    const shown = pwEl.textContent !== dot;
+    pwEl.textContent = shown ? dot : pw;
+    showBtn.textContent = shown ? "แสดงรหัส" : "ซ่อนรหัส";
+  };
+  box.querySelector(".sb-use").onclick = () => {
+    frm.user.value = s.user || "";
+    frm.password.value = pw;
+    frm.password.focus();
+  };
+  box.hidden = false;
 }
 $("#btn-add").onclick = () => openForm(null);
 
@@ -1417,6 +1472,7 @@ function openProjForm(p, roomId = "") {
   $("#pf-title").textContent = p ? `แก้ไขโปรเจกเตอร์: ${p.name}` : "เพิ่มโปรเจกเตอร์";
   $("#pf-submit").textContent = pSubmitLabel();
   $("#pf-err").textContent = "";
+  showSheetValues("#proj-sheet", "projectors", p, pform);
   $("#dlg-proj-form").showModal();
   pform.name.focus();
 }

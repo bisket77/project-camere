@@ -1136,6 +1136,25 @@ def get_projector(proj_id):
     return p
 
 
+SHEET = None  # ตั้งโดย sheet_sync.start_from_env เมื่อเปิดซิงก์ Google Sheet
+
+
+@app.get("/api/<kind>/<dev_id>/sheet")
+def device_sheet_values(kind, dev_id):
+    """ค่าของเครื่องนี้ใน Google Sheet (ไว้แสดงเทียบในหน้าแก้ไข — แก้จริงทำในเว็บ ไม่เขียนกลับชีต)"""
+    if kind == "cameras":
+        dev = get_cam(dev_id)
+        ips = {dev.ip, urlparse(dev.custom_rtsp).hostname if dev.custom_rtsp else dev.ip}
+    elif kind == "projectors":
+        dev = get_projector(dev_id)
+        ips = {dev.ip}
+    else:
+        abort(404)
+    if SHEET is None:
+        return jsonify(enabled=False, row=None)
+    return jsonify(enabled=True, row=SHEET.lookup(kind, ips))
+
+
 def build_projector(d, old=None):
     ip = (d.get("ip") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9.\-]+", ip):
@@ -1266,5 +1285,8 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, default=5000)
     args = ap.parse_args()
     load_saved_cameras()
+    import sys
+    import sheet_sync  # ดึงกล้องจาก Google Sheet อัตโนมัติ (ถ้าตั้ง SHEET_URL + SHEET_TOKEN)
+    sheet_sync.start_from_env(sys.modules[__name__])
     print(f"เปิดเบราว์เซอร์ที่ http://{'127.0.0.1' if args.host == '0.0.0.0' else args.host}:{args.port}")
     app.run(host=args.host, port=args.port, threaded=True, debug=False)

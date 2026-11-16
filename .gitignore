@@ -28,3 +28,4 @@ __pycache__/
 .ruff_cache/
 *.jpg
 *.mp4
+tools/doc_scripts/
