@@ -228,10 +228,13 @@
   .rc .more { display: flex; justify-content: flex-end; }
   .dev-tools { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; background: var(--accent-soft); border-radius: 6px; padding: 5px 6px; }
   .dev-tools select { padding: 3px 6px; font-size: 12px; flex: 1; min-width: 110px; }
-  .edit-panel { display: grid; gap: 6px; border-top: 1px dashed var(--accent); padding-top: 8px; margin-top: 4px; }
+  /* ทุกอย่างในการ์ดห้องต้องไม่กว้างเกินการ์ด (dropdown จะกว้างตามตัวเลือกที่ยาวที่สุดถ้าไม่บังคับ) */
+  .rc, .rc > *, .edit-panel, .edit-panel .line > *, .dev-tools > * { min-width: 0; }
+  .edit-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; border-top: 1px dashed var(--accent); padding-top: 8px; margin-top: 4px; }
   .edit-panel .line { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .edit-panel .line > button { flex: 1; }
-  .edit-panel select { flex: 1; min-width: 140px; padding: 4px 8px; font-size: 13px; }
+  .edit-panel .line > button { flex: 1 1 0; white-space: nowrap; }
+  .edit-panel select { flex: 1 1 100%; width: 100%; max-width: 100%; padding: 4px 8px; font-size: 13px; text-overflow: ellipsis; }
+  .dev-tools select { max-width: 100%; }
   .edit-panel .t { font-size: 12px; color: var(--muted); }
   .editing .rc { border-style: dashed; border-color: var(--accent); }
   .editing .rc.bad { border-color: var(--bad); }
@@ -289,8 +292,42 @@
   .sheet-box .sb-actions button { padding: 3px 10px; font-size: 12px; }
   .sheet-box .diff { color: var(--warn, #c77700); }
   .actions { display: flex; justify-content: flex-end; gap: 8px; }
-  #viewer { width: min(1200px, 96vw); }
-  #viewer img, #viewer video { width: 100%; display: block; background: #000; min-height: 200px; max-height: 75vh; object-fit: contain; }
+  #viewer { width: fit-content; min-width: min(760px, 96vw); max-width: 96vw; }
+  /* กรอบภาพ: ขนาดตามสัดส่วนภาพจริงของกล้อง (ตั้งใน JS: fitStage) -> ไม่มีขอบดำ */
+  .v-stage { position: relative; margin: 0 auto; background: #000; width: min(1200px, 92vw); aspect-ratio: 16 / 9; max-width: 100%; }
+  .v-stage img, .v-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: transparent; }
+  .v-stage img[hidden], .v-stage video[hidden] { display: none; }
+  .v-skel { position: absolute; inset: 0; display: none; place-items: center; color: #9aa3b8; font-size: 13px;
+    background: linear-gradient(100deg, #1b2230 30%, #263042 50%, #1b2230 70%); background-size: 300% 100%; animation: skel 1.3s linear infinite; }
+  .v-stage.loading .v-skel { display: grid; }
+  @keyframes skel { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  @media (prefers-reduced-motion: reduce) { .v-skel { animation: none; } }
+  .v-extra { display: flex; flex-wrap: wrap; gap: 12px; padding: 0 16px 14px; }
+  .v-extra:has(> .v-panel:not([hidden])) { padding-top: 2px; }
+  .v-panel { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel2); }
+  .v-panel h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  #v-ptz .ptz-body { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .ptz-pad { display: grid; grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(3, 38px); gap: 4px; }
+  .ptz-pad button, .ptz-pair button { padding: 0; font-size: 17px; line-height: 1; touch-action: none; user-select: none; }
+  .ptz-pad .mid { visibility: hidden; }
+  .ptz-side { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+  .ptz-pair { display: grid; grid-template-columns: 38px 38px; gap: 4px; align-items: center; }
+  .ptz-row { display: grid; grid-template-columns: 52px auto; align-items: center; gap: 6px; }
+  .ptz-side select { padding: 3px 6px; font-size: 12px; }
+  .ptz-msg { font-size: 12px; min-height: 1.2em; color: var(--bad); }
+  .v-projs { flex: 1 1 340px; }
+  .v-proj { display: grid; grid-template-columns: minmax(130px, 200px) repeat(3, minmax(120px, 1fr)); gap: 6px 12px; align-items: center; font-size: 13px; }
+  .v-proj + .v-proj { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .v-proj .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v-proj .nm small { display: block; margin-top: 3px; }
+  .v-proj .nm .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; font-weight: 600; }
+  /* #viewer นำหน้าเพื่อชนะ body.size-s / size-m (ขนาดการ์ด) — ปุ่มในหน้าดูภาพใหญ่เสมอ */
+  #viewer .v-proj .pair { gap: 8px; }
+  #viewer .v-proj .pair button { min-height: 44px; padding: 10px 12px; font-size: 16px; font-weight: 700; border-radius: 8px; }
+  #viewer .v-proj .grp { font-size: 12px; gap: 4px; }
+  #viewer .v-proj .nm { font-size: 14px; font-weight: 600; }
+  .v-proj .grp { display: grid; gap: 2px; font-size: 11px; color: var(--muted); }
+  @media (max-width: 640px) { .v-proj { grid-template-columns: 1fr 1fr; } .v-proj .nm { grid-column: 1 / -1; } }
   .vinfo { display: flex; gap: 16px; flex-wrap: wrap; padding: 10px 16px; font-size: 13px; color: var(--muted); }
   .vinfo b { color: var(--text); font-weight: 500; }
 
@@ -533,9 +570,16 @@
 <!-- ดูภาพสด -->
 <dialog id="viewer">
   <div class="dlg-head"><h2 id="v-title">กล้อง</h2><span class="hint" style="margin-right:6px">กดนอกหน้าต่างหรือ Esc เพื่อปิด</span><button type="button" id="v-reconnect"><span data-icon="refresh"></span>เชื่อมต่อใหม่</button><button type="button" class="icon-only" data-close data-icon="close"></button></div>
-  <img id="v-img" alt="">
-  <video id="v-video" muted autoplay playsinline hidden></video>
+  <div class="v-stage loading" id="v-stage">
+    <img id="v-img" alt="" hidden>
+    <video id="v-video" muted autoplay playsinline hidden></video>
+    <div class="v-skel">กำลังโหลดภาพ…</div>
+  </div>
   <div class="vinfo" id="v-info"></div>
+  <div class="v-extra">
+    <div class="v-panel" id="v-ptz" hidden></div>
+    <div class="v-panel v-projs" id="v-projs" hidden></div>
+  </div>
 </dialog>
 
 <!-- สถานะ + ควบคุมโปรเจกเตอร์ -->
@@ -1211,24 +1255,60 @@ async function projControl(id, action, value, btn) {
 // วิธีที่ 2 (สำรอง): MJPEG ผ่าน <img> ใช้ได้ทุกกรณี
 let playMode = "", liveCtl = null;
 
-function stopPlayers() {
+// ขนาดกรอบภาพตามสัดส่วนจริงของกล้อง (ไม่มีขอบดำ) — ใช้ความละเอียดที่รู้แล้ว หรือจากภาพ/วิดีโอที่โหลดมา
+function fitStage(w, h) {
+  const st = $("#v-stage");
+  if (!w || !h) {
+    const m = /(\d+)\s*x\s*(\d+)/.exec(cams.find(x => x.id === viewingId)?.resolution || "");
+    if (m && !st.dataset.ar) { w = +m[1]; h = +m[2]; }
+  }
+  if (w && h) st.dataset.ar = `${w}/${h}`;
+  const [aw, ah] = (st.dataset.ar || "16/9").split("/").map(Number);
+  const panels = !$("#v-ptz").hidden || !$("#v-projs").hidden;
+  const maxH = innerHeight * (panels ? 0.58 : 0.74), maxW = Math.min(innerWidth * 0.96 - 4, 1600);
+  st.style.width = Math.max(280, Math.min(maxW, maxH * aw / ah)) + "px";
+  st.style.aspectRatio = `${aw} / ${ah}`;
+}
+addEventListener("resize", () => { if (viewingId) fitStage(); });
+
+function stopVideo() {
   if (liveCtl) { liveCtl.abort(); liveCtl = null; }
   const v = $("#v-video");
-  v.pause(); v.removeAttribute("src"); v.load(); v.hidden = true;
-  $("#v-img").src = ""; $("#v-img").hidden = true;
+  v.pause(); v.removeAttribute("src"); v.load(); v.hidden = true; v.style.opacity = "";
+}
+function stopPlayers() {
+  stopVideo();
+  const img = $("#v-img");
+  img.removeAttribute("src"); img.hidden = true;
 }
 
-function startMjpeg(id) {
-  stopPlayers();
-  playMode = "MJPEG";
+// MJPEG: ภาพล่าสุดที่เซิร์ฟเวอร์มีอยู่แล้ว ขึ้นเกือบทันที (ใช้เป็นภาพแรกระหว่างรอ H.264 และเป็นทางสำรอง)
+function showMjpeg(id) {
   const img = $("#v-img");
   img.hidden = false;
   img.src = `/api/cameras/${id}/stream.mjpg?t=${Date.now()}`;
+  const t0 = Date.now();
+  const tick = () => {  // ภาพ multipart ไม่มี onload ที่เชื่อถือได้ -> ดูว่าได้ภาพแรกแล้วหรือยัง
+    if (viewingId !== id || img.hidden) return;
+    if (img.naturalWidth) {
+      $("#v-stage").classList.remove("loading");
+      if (!$("#v-stage").dataset.real) fitStage(img.naturalWidth, img.naturalHeight);
+      return;
+    }
+    if (Date.now() - t0 < 20000) setTimeout(tick, 80);
+  };
+  tick();
+}
+function startMjpeg(id) {
+  stopPlayers();
+  playMode = "MJPEG";
+  showMjpeg(id);
   renderViewerInfo();
 }
 
+// H.264 ตรง: เตรียมอยู่เบื้องหลัง (ภาพ MJPEG ยังแสดงอยู่) เล่นได้เมื่อไหร่ค่อยสลับมา — กล้องที่ keyframe ห่างไม่ต้องรอจอดำ
 async function startH264(id) {
-  stopPlayers();
+  stopVideo();
   const ctl = new AbortController(); liveCtl = ctl;
   const res = await fetch(`/api/cameras/${id}/live.mp4`, {signal: ctl.signal, cache: "no-store"});
   if (!res.ok) throw new Error("live.mp4 " + res.status);
@@ -1258,9 +1338,18 @@ async function startH264(id) {
     }
     pump();
   });
-  playMode = "H.264 ตรง (ลื่นสุด)";
+  v.style.opacity = "0";  // เล่นอยู่ข้างหลังภาพ MJPEG จนกว่าจะมีภาพจริง
   v.hidden = false;
-  renderViewerInfo();
+  v.addEventListener("playing", () => {
+    if (liveCtl !== ctl) return;
+    v.style.opacity = "";
+    $("#v-stage").dataset.real = "1";
+    $("#v-stage").classList.remove("loading");
+    if (v.videoWidth) fitStage(v.videoWidth, v.videoHeight);
+    const img = $("#v-img"); img.removeAttribute("src"); img.hidden = true;  // ปิด MJPEG ไม่ให้ดึงภาพซ้ำ
+    playMode = "H.264 ตรง (ลื่นสุด)";
+    renderViewerInfo();
+  }, {once: true});
   v.play().catch(() => {});
   const reader = res.body.getReader();
   while (true) {
@@ -1275,12 +1364,31 @@ async function openViewer(id) {
   const c = cams.find(x => x.id === id); if (!c) return;
   viewingId = id;
   $("#v-title").textContent = `${c.name} — ${c.ip} (${roomLabel(c.room_id)})`;
+  stopPlayers();
+  const st = $("#v-stage");
+  st.classList.add("loading"); delete st.dataset.ar; delete st.dataset.real;
   if (!$("#viewer").open) $("#viewer").showModal();
+  viewerProjSig = ""; renderViewerProjs();
+  fitStage();
+  loadPtz(id);
+  playMode = "MJPEG";
+  showMjpeg(id);  // ภาพแรกทันที
+  renderViewerInfo();
   if (c.mode === "rtsp" && window.MediaSource) {
+    playMode = "MJPEG → กำลังเปิด H.264";
+    renderViewerInfo();
     try { await startH264(id); return; }
-    catch (e) { if (e.name === "AbortError" || viewingId !== id) return; console.warn("ใช้ MJPEG แทน:", e.message); }
+    catch (e) {
+      if (e.name === "AbortError" || viewingId !== id) return;
+      console.warn("ใช้ MJPEG แทน:", e.message);
+    }
+    if (viewingId !== id) return;
+    stopVideo();  // H.264 ใช้ไม่ได้/หลุด -> อยู่กับ MJPEG
+    delete $("#v-stage").dataset.real;
+    if ($("#v-img").hidden) showMjpeg(id);
+    playMode = "MJPEG";
+    renderViewerInfo();
   }
-  if (viewingId === id) startMjpeg(id);
 }
 function renderViewerInfo() {
   const c = cams.find(x => x.id === viewingId); if (!c) return;
@@ -1291,8 +1399,92 @@ function renderViewerInfo() {
     item("Serial", dash(c.serial)), item("ออนไลน์มาแล้ว", uptime(c.online_since)),
     item("ช่องทางภาพ", esc(playMode || "—")), item("RTSP", esc(c.rtsp)),
   ].join("");
+  renderViewerProjs();
 }
-$("#viewer").addEventListener("close", () => { viewingId = null; stopPlayers(); playMode = ""; });
+
+// ---------- โปรเจกเตอร์ในห้องเดียวกับกล้อง (กดเปิด/ปิดได้จากหน้าดูภาพ) ----------
+let viewerProjSig = "";
+function renderViewerProjs() {
+  const box = $("#v-projs");
+  const c = cams.find(x => x.id === viewingId);
+  const list = c && c.room_id ? projs.filter(p => p.room_id === c.room_id) : [];
+  const sig = JSON.stringify(list.map(p => [p.id, p.name, p.status, p.power, p.av_mute, p.input]));
+  if (sig === viewerProjSig) return;
+  viewerProjSig = sig;
+  const wasHidden = box.hidden;
+  box.hidden = !list.length;
+  if (wasHidden !== box.hidden) fitStage();
+  if (!list.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `<h3>${icon("projector")} โปรเจกเตอร์ในห้องนี้</h3>` + list.map(p => {
+    const reachable = !projBad(p) && p.status !== "connecting";
+    const on = p.power === "on", busy = ["warming", "cooling"].includes(p.power);
+    const vga = p.input === "COMPUTER1" || p.input === "COMPUTER2";
+    return `<div class="v-proj">
+      <div class="nm" title="${esc(p.name)}">${esc(p.name)}<small>${connPill(p, "proj")}</small></div>
+      <div class="grp">Power<div class="pair">
+        ${pairBtn("Off", `data-power="off" data-pid="${p.id}"`, p.power === "standby" ? "cur-off" : "", !reachable || busy)}
+        ${pairBtn("On", `data-power="on" data-pid="${p.id}"`, on ? "cur-on" : "", !reachable || busy)}</div></div>
+      <div class="grp">Blank<div class="pair">
+        ${pairBtn("Unmute", `data-quick="av_mute" data-val="off" data-pid="${p.id}"`, p.av_mute === false ? "cur" : "", !on)}
+        ${pairBtn("Mute", `data-quick="av_mute" data-val="on" data-pid="${p.id}"`, p.av_mute === true ? "cur" : "", !on)}</div></div>
+      <div class="grp">Source<div class="pair">
+        ${pairBtn("HDMI", `data-quick="input" data-val="HDMI" data-pid="${p.id}"`, p.input === "HDMI" ? "cur" : "", !on)}
+        ${pairBtn("VGA", `data-quick="input" data-val="COMPUTER1" data-pid="${p.id}"`, vga ? "cur" : "", !on)}</div></div>
+    </div>`;
+  }).join("");
+}
+
+// ---------- หมุน / ซูม / โฟกัส (แสดงเฉพาะกล้องที่รองรับ) ----------
+let ptzCam = null, ptzHeld = null;
+async function loadPtz(id) {
+  const box = $("#v-ptz");
+  ptzCam = id; box.hidden = true; box.innerHTML = "";
+  let caps;
+  try { caps = await api(`/api/cameras/${id}/ptz`); } catch { return; }
+  if (ptzCam !== id || !caps.supported) return;
+  const b = (move, label, title) => `<button type="button" data-ptz="${move}" title="${title}">${label}</button>`;
+  const pad = caps.pan_tilt ? `<div class="ptz-pad">
+      ${b("upleft", "↖", "ซ้ายบน")}${b("up", "↑", "ขึ้น")}${b("upright", "↗", "ขวาบน")}
+      ${b("left", "←", "ซ้าย")}<button type="button" class="mid" tabindex="-1"></button>${b("right", "→", "ขวา")}
+      ${b("downleft", "↙", "ซ้ายล่าง")}${b("down", "↓", "ลง")}${b("downright", "↘", "ขวาล่าง")}</div>` : "";
+  const presets = caps.presets?.length ? `<div class="ptz-row"><span>ตำแหน่ง</span><span>
+      <select id="ptz-preset">${caps.presets.map(p => `<option value="${p.index}">${esc(p.name)}</option>`).join("")}</select>
+      <button type="button" class="sm" id="ptz-go">ไป</button></span></div>` : "";
+  box.innerHTML = `<h3>${icon("camera")} ควบคุมกล้อง <span class="hint">(กดค้างเพื่อหมุน ปล่อยเพื่อหยุด)</span></h3>
+    <div class="ptz-body">${pad}
+      <div class="ptz-side">
+        ${caps.zoom ? `<div class="ptz-row"><span>ซูม</span><span class="ptz-pair">${b("zoom_out", "−", "ซูมออก")}${b("zoom_in", "+", "ซูมเข้า")}</span></div>` : ""}
+        ${caps.focus ? `<div class="ptz-row"><span>โฟกัส</span><span class="ptz-pair">${b("focus_near", "−", "โฟกัสใกล้")}${b("focus_far", "+", "โฟกัสไกล")}</span></div>` : ""}
+        <div class="ptz-row"><span>ความเร็ว</span><select id="ptz-speed">${[1, 2, 3, 4, 5, 6, 7, 8].map(n =>
+          `<option ${n === 4 ? "selected" : ""}>${n}</option>`).join("")}</select></div>
+        ${presets}
+      </div>
+    </div><div class="ptz-msg" id="ptz-msg"></div>`;
+  box.hidden = false;
+  fitStage();
+  const go = $("#ptz-go");
+  if (go) go.onclick = () => ptzSend({action: "preset", index: +$("#ptz-preset").value});
+}
+async function ptzSend(body) {
+  const id = ptzCam; if (!id) return;
+  try { await api(`/api/cameras/${id}/ptz`, "POST", body); if ($("#ptz-msg")) $("#ptz-msg").textContent = ""; }
+  catch (e) { if ($("#ptz-msg")) $("#ptz-msg").textContent = e.message; }
+}
+function ptzRelease() {
+  if (!ptzHeld) return;
+  const move = ptzHeld; ptzHeld = null;
+  ptzSend({action: "stop", move});
+}
+$("#v-ptz").addEventListener("pointerdown", e => {
+  const btn = e.target.closest("[data-ptz]"); if (!btn) return;
+  e.preventDefault();
+  btn.setPointerCapture?.(e.pointerId);
+  ptzRelease();
+  ptzHeld = btn.dataset.ptz;
+  ptzSend({action: "start", move: ptzHeld, speed: +($("#ptz-speed")?.value || 4)});
+});
+for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) $("#v-ptz").addEventListener(ev, ptzRelease);
+$("#viewer").addEventListener("close", () => { ptzRelease(); ptzCam = null; viewingId = null; stopPlayers(); playMode = ""; });
 // กดพื้นที่ว่างรอบหน้าต่าง = ปิด (คลิกโดนตัว dialog เอง ไม่ใช่ของข้างใน)
 for (const id of ["#viewer", "#dlg-proj"]) {
   $(id).addEventListener("click", e => {

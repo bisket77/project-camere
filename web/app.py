@@ -33,6 +33,7 @@ from requests.auth import HTTPDigestAuth, HTTPBasicAuth  # noqa: E402
 from flask import Flask, Response, jsonify, request, send_from_directory, abort  # noqa: E402
 import db  # noqa: E402  ฐานข้อมูลกล้อง (SQLite + เข้ารหัสรหัสผ่าน)
 import projector as pj  # noqa: E402  ควบคุมโปรเจกเตอร์ (PJLink / Panasonic)
+import ptz  # noqa: E402  หมุน / ซูม / โฟกัส / ตำแหน่งจำ ของกล้องที่รองรับ
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OPEN_TIMEOUT_MS = 6000
@@ -834,6 +835,7 @@ def edit_camera(cam_id):
     except FormError as e:
         return jsonify(error=str(e)), 400
     old.stop()  # หยุดการเชื่อมต่อเดิม แล้วเริ่มใหม่ด้วยค่าใหม่ (id เดิม)
+    ptz.forget(cam_id)  # IP / รหัสอาจเปลี่ยน -> ถามความสามารถ PTZ ใหม่
     with cameras_lock:
         cameras[cam.id] = cam
     db.save_camera(cam)
@@ -849,12 +851,38 @@ def delete_camera(cam_id):
         abort(404)
     db.delete_camera(cam_id)
     cam.stop()
+    ptz.forget(cam_id)
     return jsonify(ok=True)
 
 
 @app.post("/api/cameras/<cam_id>/reconnect")
 def reconnect_camera(cam_id):
     get_cam(cam_id).reconnect()
+    return jsonify(ok=True)
+
+
+@app.get("/api/cameras/<cam_id>/ptz")
+def camera_ptz_caps(cam_id):
+    """กล้องนี้หมุน/ซูม/โฟกัส/ตำแหน่งจำ ได้ไหม (?refresh=1 ถามกล้องใหม่)"""
+    return jsonify(ptz.caps(get_cam(cam_id), refresh=request.args.get("refresh") == "1"))
+
+
+@app.post("/api/cameras/<cam_id>/ptz")
+def camera_ptz(cam_id):
+    """{"action": "start"|"stop", "move": "up"…, "speed": 1-8} หรือ {"action": "preset", "index": 1}"""
+    cam = get_cam(cam_id)
+    d = request.get_json(force=True) or {}
+    try:
+        if d.get("action") == "start":
+            ptz.start(cam, d.get("move"), d.get("speed", 4))
+        elif d.get("action") == "stop":
+            ptz.stop(cam, d.get("move"))
+        elif d.get("action") == "preset":
+            ptz.goto_preset(cam, d.get("index"))
+        else:
+            return jsonify(error="action ต้องเป็น start / stop / preset"), 400
+    except (ptz.PTZError, ValueError, TypeError) as e:
+        return jsonify(error=str(e) or "คำสั่งไม่ถูกต้อง"), 400
     return jsonify(ok=True)
 
 
